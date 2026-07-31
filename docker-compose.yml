@@ -1,0 +1,165 @@
+# Full local stack: Redpanda (Kafka API) + Postgres + Redis + 4 services +
+# Prometheus + Grafana + the Next.js console.
+#
+#   docker compose up -d --build
+#   console      http://localhost:3000
+#   gateway API  http://localhost:8000/docs
+#   grafana      http://localhost:3001  (admin / aegisflow)
+#
+name: aegisflow
+
+x-backend: &backend
+  build:
+    context: .
+  image: aegisflow/backend:1.0.0
+  environment: &backend-env
+    APP_ENV: docker
+    DATABASE_URL: postgresql://aegis:aegis@postgres:5432/aegisflow
+    BROKER: kafka
+    KAFKA_BOOTSTRAP: redpanda:9092
+    REDIS_ENABLED: "true"
+    REDIS_URL: redis://redis:6379/0
+    API_KEYS: demo-key-aegisflow,partner-key-aegisflow
+    ADMIN_API_KEY: admin-key-aegisflow
+    GATEWAY_URL: http://gateway:8000
+    LAB_URL: http://lab:8100
+    ARTIFACTS_DIR: /app/ml/artifacts
+    LOG_JSON: "true"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redpanda:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis
+      POSTGRES_DB: aegisflow
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegisflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.8
+    command:
+      - redpanda start
+      - --smp 1
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+      - --mode dev-container
+    ports: ["19092:19092", "9644:9644"]
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 8s
+      timeout: 5s
+      retries: 20
+
+  gateway:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: gateway
+      PORT: "8000"
+      WEB_CONCURRENCY: "2"
+    command: ["sh", "-c", "uvicorn services.gateway.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 15s
+      timeout: 4s
+      retries: 5
+
+  worker:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: worker
+      WORKER_CONCURRENCY: "6"
+      METRICS_PORT: "9101"
+      AEGISFLOW_ALLOW_CRASH: "1"
+    command: ["python", "-m", "services.worker.main"]
+    deploy:
+      replicas: 3
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9101/health || exit 1"]
+      interval: 15s
+      timeout: 4s
+      retries: 5
+
+  relay:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: relay
+      METRICS_PORT: "9102"
+    command: ["python", "-m", "services.relay.main"]
+
+  lab:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: lab
+    command: ["sh", "-c", "uvicorn services.lab.main:app --host 0.0.0.0 --port 8100"]
+    ports: ["8100:8100"]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=24h
+    ports: ["9090:9090"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: aegisflow
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/aegisflow.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["3001:3000"]
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+  console:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_USE_MOCKS: "false"
+    image: aegisflow/console:1.0.0
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_USE_MOCKS: "false"
+      NEXT_PUBLIC_DEMO_API_KEY: demo-key-aegisflow
+    ports: ["3000:3000"]
+    depends_on: [gateway]
+    restart: unless-stopped
+
+volumes:
+  pgdata:

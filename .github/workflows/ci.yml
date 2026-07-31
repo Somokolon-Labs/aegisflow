@@ -1,0 +1,138 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend · train, boot, smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff==0.9.2
+
+      - name: Lint
+        run: ruff check aegisflow_core services ml
+
+      - name: Train bundled models
+        run: python ml/train.py --per-class 400 --seed 17
+
+      - name: Boot the platform (SQLite + DB broker)
+        env:
+          APP_ENV: ci
+          DATABASE_URL: sqlite+aiosqlite:///./data/ci.db
+          BROKER: db
+          LOG_JSON: "false"
+        run: |
+          mkdir -p data
+          uvicorn services.gateway.main:app --host 127.0.0.1 --port 8000 &
+          METRICS_PORT=9101 python -m services.worker.main &
+          METRICS_PORT=9102 python -m services.relay.main &
+          uvicorn services.lab.main:app --host 127.0.0.1 --port 8100 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health >/dev/null && break
+            sleep 2
+          done
+
+      - name: Smoke test the full path
+        env:
+          APP_ENV: ci
+          DATABASE_URL: sqlite+aiosqlite:///./data/ci.db
+          BROKER: db
+        run: python scripts/smoke.py
+
+      - name: Contract check
+        run: |
+          set -e
+          curl -fsS http://127.0.0.1:8000/v1/stats -H 'X-API-Key: demo-key-aegisflow' >/dev/null
+          curl -fsS http://127.0.0.1:8000/v1/models >/dev/null
+          curl -fsS http://127.0.0.1:8000/v1/lab/scenarios >/dev/null
+          curl -fsS http://127.0.0.1:8000/metrics | grep -q aegisflow_jobs_submitted_total
+
+  console:
+    name: console · typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci || npm install --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_USE_MOCKS: "true"
+
+  manifests:
+    name: manifests · kustomize + compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render kustomize
+        run: kubectl kustomize deploy/k8s > /tmp/rendered.yaml && head -20 /tmp/rendered.yaml
+      - name: Validate compose file
+        run: docker compose -f docker-compose.yml config >/dev/null
+
+  image:
+    name: image · build and push
+    runs-on: ubuntu-latest
+    needs: [backend, console]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/aegisflow-backend:1.0.0
+            ghcr.io/${{ github.repository_owner }}/aegisflow-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/aegisflow-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Console image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          push: true
+          build-args: |
+            NEXT_PUBLIC_USE_MOCKS=false
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/aegisflow-console:1.0.0
+            ghcr.io/${{ github.repository_owner }}/aegisflow-console:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

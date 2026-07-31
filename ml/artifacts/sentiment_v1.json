@@ -1,0 +1,14 @@
+{
+  "version": "sentiment-v1+tfidf-logreg",
+  "accuracy": 0.9953,
+  "f1_macro": 0.9952,
+  "samples": 2110,
+  "test_samples": 422,
+  "classes": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "training_seconds": 0.078,
+  "trained_at": "2026-07-31T16:28:06Z"
+}

@@ -1,0 +1,58 @@
+# Render blueprint: the cheap deployment path.
+# Broker = db, so no Kafka is required; Postgres carries the durable queue.
+#   render blueprint launch  (or connect the repo in the dashboard)
+services:
+  - type: web
+    name: aegisflow-gateway
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - { key: SERVICE_NAME, value: gateway }
+      - { key: APP_ENV, value: render }
+      - { key: BROKER, value: db }
+      - { key: REDIS_ENABLED, value: "false" }
+      - { key: PORT, value: "8000" }
+      - { key: LAB_URL, value: "http://aegisflow-lab:8100" }
+      - { key: API_KEYS, generateValue: true }
+      - { key: ADMIN_API_KEY, generateValue: true }
+      - key: DATABASE_URL
+        fromDatabase: { name: aegisflow-db, property: connectionString }
+
+  - type: worker
+    name: aegisflow-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    dockerCommand: python -m services.worker.main
+    envVars:
+      - { key: SERVICE_NAME, value: worker }
+      - { key: APP_ENV, value: render }
+      - { key: BROKER, value: db }
+      - { key: WORKER_CONCURRENCY, value: "6" }
+      - { key: METRICS_PORT, value: "9101" }
+      - key: DATABASE_URL
+        fromDatabase: { name: aegisflow-db, property: connectionString }
+
+  - type: worker
+    name: aegisflow-relay
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    dockerCommand: python -m services.relay.main
+    envVars:
+      - { key: SERVICE_NAME, value: relay }
+      - { key: APP_ENV, value: render }
+      - { key: BROKER, value: db }
+      - { key: METRICS_PORT, value: "9102" }
+      - key: DATABASE_URL
+        fromDatabase: { name: aegisflow-db, property: connectionString }
+
+databases:
+  - name: aegisflow-db
+    plan: basic-256mb
+    postgresMajorVersion: "16"

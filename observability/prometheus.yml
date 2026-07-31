@@ -1,0 +1,37 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 10s
+  external_labels:
+    platform: aegisflow
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["gateway:8000"]
+        labels: { service: gateway }
+
+  - job_name: workers
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: ["tasks.worker"]
+        type: A
+        port: 9101
+    static_configs:
+      - targets: ["worker:9101"]
+        labels: { service: worker }
+
+  - job_name: relay
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["relay:9102"]
+        labels: { service: relay }
+
+  - job_name: lab
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["lab:8100"]
+        labels: { service: lab }

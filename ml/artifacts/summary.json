@@ -1,0 +1,38 @@
+{
+  "sentiment_v1": {
+    "version": "sentiment-v1+tfidf-logreg",
+    "accuracy": 0.9953,
+    "f1_macro": 0.9952,
+    "samples": 2110,
+    "test_samples": 422,
+    "classes": [
+      "negative",
+      "neutral",
+      "positive"
+    ],
+    "training_seconds": 0.078,
+    "trained_at": "2026-07-31T16:28:06Z"
+  },
+  "sentiment_v2": {
+    "version": "sentiment-v2+char-svm",
+    "accuracy": 0.9976,
+    "f1_macro": 0.9976,
+    "samples": 2110,
+    "test_samples": 422,
+    "classes": [
+      "negative",
+      "neutral",
+      "positive"
+    ],
+    "training_seconds": 0.213,
+    "trained_at": "2026-07-31T16:28:06Z"
+  },
+  "embed_v1": {
+    "version": "embed-v1+tfidf-svd",
+    "dim": 64,
+    "explained_variance": 0.7772,
+    "samples": 2110,
+    "training_seconds": 0.457,
+    "trained_at": "2026-07-31T16:28:07Z"
+  }
+}

@@ -1,0 +1,141 @@
+# Dependencies for a self-contained cluster demo.
+# In production point DATABASE_URL at a managed Postgres (Neon/RDS/Cloud SQL)
+# and KAFKA_BOOTSTRAP at a managed Kafka, then delete this file.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: aegisflow
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{ containerPort: 5432, name: postgres }]
+          env:
+            - { name: POSTGRES_USER, value: aegis }
+            - { name: POSTGRES_PASSWORD, value: aegis }
+            - { name: POSTGRES_DB, value: aegisflow }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "aegis", "-d", "aegisflow"] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 8Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: aegisflow
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: aegisflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+          ports: [{ containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 320Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: aegisflow
+spec:
+  selector: { app: redis }
+  ports: [{ port: 6379, targetPort: 6379 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redpanda
+  namespace: aegisflow
+spec:
+  serviceName: redpanda
+  replicas: 1
+  selector:
+    matchLabels: { app: redpanda }
+  template:
+    metadata:
+      labels: { app: redpanda }
+    spec:
+      containers:
+        - name: redpanda
+          image: redpandadata/redpanda:v24.2.8
+          args:
+            - redpanda
+            - start
+            - --smp=1
+            - --overprovisioned
+            - --node-id=0
+            - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+            - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+            - --mode=dev-container
+          ports:
+            - { containerPort: 9092, name: kafka }
+            - { containerPort: 9644, name: admin }
+          readinessProbe:
+            tcpSocket: { port: 9092 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/redpanda/data }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 8Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda
+  namespace: aegisflow
+spec:
+  selector: { app: redpanda }
+  ports:
+    - { port: 9092, targetPort: 9092, name: kafka }
+    - { port: 9644, targetPort: 9644, name: admin }

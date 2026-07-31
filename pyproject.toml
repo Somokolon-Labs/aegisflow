@@ -1,0 +1,30 @@
+[project]
+name = "aegisflow"
+version = "1.0.0"
+description = "Event-driven ML inference platform with chaos-verified fault tolerance"
+requires-python = ">=3.10"
+authors = [{ name = "Shahriar Ahmed Seam" }]
+readme = "README.md"
+license = { text = "MIT" }
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = [".venv", "data", "web", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+  "B008",   # FastAPI dependency defaults are idiomatic
+  "B904",   # explicit `from` on every raise is noise here
+  "E501",   # line length is handled by the formatter
+  "SIM105", # contextlib.suppress is used where it reads better
+  "RUF012", # mutable class attrs without ClassVar (pydantic/sqlalchemy models)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"ml/train.py" = ["C4"]
+"scripts/*.py" = ["T201"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aegisflow_core", "services"]

@@ -1,0 +1,158 @@
+{
+  "uid": "aegisflow-overview",
+  "title": "AegisFlow — platform overview",
+  "tags": ["aegisflow", "inference", "resilience"],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Completions / sec",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 1, "color": { "mode": "fixed", "fixedColor": "green" } } },
+      "targets": [
+        { "expr": "sum(rate(aegisflow_jobs_completed_total[1m]))", "legendFormat": "completed", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Queue depth",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 250 },
+              { "color": "red", "value": 750 }
+            ]
+          }
+        }
+      },
+      "targets": [{ "expr": "max(aegisflow_queue_depth)", "refId": "A" }]
+    },
+    {
+      "type": "stat",
+      "title": "Outbox pending",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 50 }
+            ]
+          }
+        }
+      },
+      "targets": [{ "expr": "max(aegisflow_outbox_pending)", "refId": "A" }]
+    },
+    {
+      "type": "stat",
+      "title": "p95 end-to-end",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aegisflow_job_end_to_end_seconds_bucket[5m])) by (le))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Workers online",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "targets": [{ "expr": "count(aegisflow_service_up{service=\"worker\"} == 1)", "refId": "A" }]
+    },
+    {
+      "type": "stat",
+      "title": "Active faults",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "purple" }
+        }
+      },
+      "targets": [{ "expr": "sum(aegisflow_chaos_faults_active)", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Throughput by outcome",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 12, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "sum by (status) (rate(aegisflow_jobs_completed_total[1m]))", "legendFormat": "{{status}}", "refId": "A" },
+        { "expr": "sum(rate(aegisflow_jobs_submitted_total[1m]))", "legendFormat": "submitted", "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency percentiles (end-to-end)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 8, "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(aegisflow_job_end_to_end_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aegisflow_job_end_to_end_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(aegisflow_job_end_to_end_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue depth vs in-flight",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 14, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "max(aegisflow_queue_depth)", "legendFormat": "queue depth", "refId": "A" },
+        { "expr": "sum(aegisflow_worker_inflight)", "legendFormat": "in flight", "refId": "B" },
+        { "expr": "max(aegisflow_outbox_pending)", "legendFormat": "outbox pending", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Retries, dead letters, rate limiting",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "sum(rate(aegisflow_job_retries_total[2m]))", "legendFormat": "retries", "refId": "A" },
+        { "expr": "sum(rate(aegisflow_dead_letters_total[5m]))", "legendFormat": "dead letters", "refId": "B" },
+        { "expr": "sum(rate(aegisflow_rate_limited_total[2m]))", "legendFormat": "rate limited", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Circuit breaker state (0 closed / 1 half-open / 2 open)",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 19 },
+      "fieldConfig": { "defaults": { "max": 2, "min": 0, "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line", "lineInterpolation": "stepAfter" } } },
+      "targets": [{ "expr": "aegisflow_circuit_breaker_state", "legendFormat": "{{name}}", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Broker publishes by result",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 19 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "sum by (result) (rate(aegisflow_broker_publish_total[1m]))", "legendFormat": "{{result}}", "refId": "A" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "version": "sentiment-v2+char-svm",
+  "accuracy": 0.9976,
+  "f1_macro": 0.9976,
+  "samples": 2110,
+  "test_samples": 422,
+  "classes": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "training_seconds": 0.213,
+  "trained_at": "2026-07-31T16:28:06Z"
+}

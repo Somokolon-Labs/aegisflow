@@ -1,0 +1,353 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: aegisflow
+  labels: { app: gateway, app.kubernetes.io/component: api }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      serviceAccountName: aegisflow
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: gateway }
+      containers:
+        - name: gateway
+          image: ghcr.io/shahriarahmedseam/aegisflow-backend:1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - uvicorn services.gateway.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*
+          ports: [{ containerPort: 8000, name: http }]
+          envFrom:
+            - configMapRef: { name: aegisflow-config }
+            - secretRef: { name: aegisflow-secrets }
+          env:
+            - { name: SERVICE_NAME, value: gateway }
+            - name: INSTANCE_ID
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            failureThreshold: 20
+            periodSeconds: 3
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 8000 }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 150m, memory: 320Mi }
+            limits: { cpu: "1", memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: aegisflow
+  labels: { app: gateway }
+spec:
+  selector: { app: gateway }
+  ports: [{ port: 8000, targetPort: 8000, name: http }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+  namespace: aegisflow
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: gateway }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies: [{ type: Percent, value: 100, periodSeconds: 30 }]
+    scaleDown:
+      stabilizationWindowSeconds: 180
+      policies: [{ type: Pods, value: 1, periodSeconds: 60 }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+  namespace: aegisflow
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: gateway }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: aegisflow
+  labels: { app: worker, app.kubernetes.io/component: consumer }
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 2, maxUnavailable: 1 }
+  selector:
+    matchLabels: { app: worker }
+  template:
+    metadata:
+      labels: { app: worker }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9101"
+    spec:
+      serviceAccountName: aegisflow
+      # Long grace period: SIGTERM stops polling and drains in-flight jobs.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: worker
+          image: ghcr.io/shahriarahmedseam/aegisflow-backend:1.0.0
+          command: ["python", "-m", "services.worker.main"]
+          ports: [{ containerPort: 9101, name: metrics }]
+          envFrom:
+            - configMapRef: { name: aegisflow-config }
+            - secretRef: { name: aegisflow-secrets }
+          env:
+            - { name: SERVICE_NAME, value: worker }
+            - { name: METRICS_PORT, value: "9101" }
+            - name: WORKER_ID
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 9101 }
+            initialDelaySeconds: 8
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 9101 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 1.5Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: aegisflow
+  labels: { app: worker }
+spec:
+  clusterIP: None
+  selector: { app: worker }
+  ports: [{ port: 9101, targetPort: 9101, name: metrics }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+  namespace: aegisflow
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: worker }
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+    # Queue depth is the signal that actually matters; requires the Prometheus
+    # adapter (or use the KEDA ScaledObject in deploy/k8s/optional).
+    - type: Pods
+      pods:
+        metric: { name: aegisflow_worker_inflight }
+        target: { type: AverageValue, averageValue: "6" }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 15
+      policies: [{ type: Percent, value: 200, periodSeconds: 30 }]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies: [{ type: Pods, value: 2, periodSeconds: 60 }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker
+  namespace: aegisflow
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: worker }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay
+  namespace: aegisflow
+  labels: { app: relay, app.kubernetes.io/component: relay }
+spec:
+  # One logical owner; all writes are idempotent so a brief overlap is safe.
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: relay }
+  template:
+    metadata:
+      labels: { app: relay }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9102"
+    spec:
+      serviceAccountName: aegisflow
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: relay
+          image: ghcr.io/shahriarahmedseam/aegisflow-backend:1.0.0
+          command: ["python", "-m", "services.relay.main"]
+          ports: [{ containerPort: 9102, name: metrics }]
+          envFrom:
+            - configMapRef: { name: aegisflow-config }
+            - secretRef: { name: aegisflow-secrets }
+          env:
+            - { name: SERVICE_NAME, value: relay }
+            - { name: METRICS_PORT, value: "9102" }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 9102 }
+            initialDelaySeconds: 8
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relay
+  namespace: aegisflow
+  labels: { app: relay }
+spec:
+  selector: { app: relay }
+  ports: [{ port: 9102, targetPort: 9102, name: metrics }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab
+  namespace: aegisflow
+  labels: { app: lab, app.kubernetes.io/component: lab }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: lab }
+  template:
+    metadata:
+      labels: { app: lab }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8100"
+    spec:
+      serviceAccountName: aegisflow
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: lab
+          image: ghcr.io/shahriarahmedseam/aegisflow-backend:1.0.0
+          command: ["sh", "-c"]
+          args: ["uvicorn services.lab.main:app --host 0.0.0.0 --port 8100"]
+          ports: [{ containerPort: 8100, name: http }]
+          envFrom:
+            - configMapRef: { name: aegisflow-config }
+            - secretRef: { name: aegisflow-secrets }
+          env:
+            - { name: SERVICE_NAME, value: lab }
+          readinessProbe:
+            httpGet: { path: /health, port: 8100 }
+            initialDelaySeconds: 8
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 640Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab
+  namespace: aegisflow
+  labels: { app: lab }
+spec:
+  selector: { app: lab }
+  ports: [{ port: 8100, targetPort: 8100, name: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: console
+  namespace: aegisflow
+  labels: { app: console, app.kubernetes.io/component: web }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: console }
+  template:
+    metadata:
+      labels: { app: console }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: console
+          image: ghcr.io/shahriarahmedseam/aegisflow-console:1.0.0
+          ports: [{ containerPort: 3000, name: http }]
+          env:
+            - { name: NEXT_PUBLIC_USE_MOCKS, value: "false" }
+            - { name: NEXT_PUBLIC_API_URL, value: "https://api.aegisflow.example.com" }
+          readinessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: console
+  namespace: aegisflow
+  labels: { app: console }
+spec:
+  selector: { app: console }
+  ports: [{ port: 3000, targetPort: 3000, name: http }]

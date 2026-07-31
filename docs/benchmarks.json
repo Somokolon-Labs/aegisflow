@@ -1,0 +1,268 @@
+[
+  {
+    "id": "run_12f549fdc1d04feba248",
+    "scenario": "baseline",
+    "metrics": {
+      "requests_sent": 600,
+      "accepted": 600,
+      "rejected": 0,
+      "status_codes": {
+        "202": 600
+      },
+      "achieved_rps": 25.0,
+      "completed_jobs": 600,
+      "succeeded": 600,
+      "failed": 0,
+      "dlq": 0,
+      "retries": 0,
+      "still_pending": 0,
+      "submit_latency_ms": {
+        "p50": 63.5,
+        "p95": 358.54,
+        "p99": 820.8,
+        "max": 3215.66
+      },
+      "end_to_end_ms": {
+        "p50": 1568.04,
+        "p95": 2351.29,
+        "p99": 2451.38
+      },
+      "queue_drain_s": 1.15,
+      "edge_error_rate": 0.0,
+      "edge_error_rate_during_fault": 0.0
+    },
+    "verdict": {
+      "zero_data_loss": true,
+      "lost_jobs": 0,
+      "accepted_jobs": 600,
+      "accounted_jobs": 600,
+      "recovery_seconds": null,
+      "availability_during_fault": 1.0,
+      "sustained_rps": 25.0,
+      "p99_submit_ms": 820.8,
+      "notes": "No faults. Establishes the reference numbers for latency and throughput."
+    }
+  },
+  {
+    "id": "run_8840914f4c9941828422",
+    "scenario": "worker-loss",
+    "metrics": {
+      "requests_sent": 600,
+      "accepted": 600,
+      "rejected": 0,
+      "status_codes": {
+        "202": 600
+      },
+      "achieved_rps": 25.0,
+      "completed_jobs": 600,
+      "succeeded": 600,
+      "failed": 0,
+      "dlq": 0,
+      "retries": 0,
+      "still_pending": 0,
+      "submit_latency_ms": {
+        "p50": 49.85,
+        "p95": 265.83,
+        "p99": 883.77,
+        "max": 1705.83
+      },
+      "end_to_end_ms": {
+        "p50": 6865.85,
+        "p95": 8362.66,
+        "p99": 8540.31
+      },
+      "queue_drain_s": 6.07,
+      "edge_error_rate": 0.0,
+      "edge_error_rate_during_fault": 0.0
+    },
+    "verdict": {
+      "zero_data_loss": true,
+      "lost_jobs": 0,
+      "accepted_jobs": 600,
+      "accounted_jobs": 600,
+      "recovery_seconds": 0.0,
+      "availability_during_fault": 1.0,
+      "sustained_rps": 25.0,
+      "p99_submit_ms": 883.77,
+      "notes": "All consumers stop mid-load. Leases expire, the relay requeues, the fleet catches up."
+    }
+  },
+  {
+    "id": "run_29cd9f9cbf9b4f9c8119",
+    "scenario": "broker-outage",
+    "metrics": {
+      "requests_sent": 600,
+      "accepted": 600,
+      "rejected": 0,
+      "status_codes": {
+        "202": 600
+      },
+      "achieved_rps": 25.0,
+      "completed_jobs": 600,
+      "succeeded": 600,
+      "failed": 0,
+      "dlq": 0,
+      "retries": 0,
+      "still_pending": 0,
+      "submit_latency_ms": {
+        "p50": 73.81,
+        "p95": 927.15,
+        "p99": 2982.21,
+        "max": 6118.7
+      },
+      "end_to_end_ms": {
+        "p50": 3455.16,
+        "p95": 5582.64,
+        "p99": 10349.07
+      },
+      "queue_drain_s": 3.84,
+      "edge_error_rate": 0.0,
+      "edge_error_rate_during_fault": 0.0
+    },
+    "verdict": {
+      "zero_data_loss": true,
+      "lost_jobs": 0,
+      "accepted_jobs": 600,
+      "accounted_jobs": 600,
+      "recovery_seconds": 2.0,
+      "availability_during_fault": 1.0,
+      "sustained_rps": 25.0,
+      "p99_submit_ms": 2982.21,
+      "notes": "Publishing fails. The gateway keeps accepting because the outbox is durable."
+    }
+  },
+  {
+    "id": "run_29a144355e9a4e52ac70",
+    "scenario": "db-slowdown",
+    "metrics": {
+      "requests_sent": 600,
+      "accepted": 600,
+      "rejected": 0,
+      "status_codes": {
+        "202": 600
+      },
+      "achieved_rps": 25.0,
+      "completed_jobs": 600,
+      "succeeded": 600,
+      "failed": 0,
+      "dlq": 0,
+      "retries": 0,
+      "still_pending": 0,
+      "submit_latency_ms": {
+        "p50": 57.87,
+        "p95": 311.09,
+        "p99": 921.74,
+        "max": 2399.23
+      },
+      "end_to_end_ms": {
+        "p50": 5258.49,
+        "p95": 6055.05,
+        "p99": 6204.34
+      },
+      "queue_drain_s": 5.14,
+      "edge_error_rate": 0.0,
+      "edge_error_rate_during_fault": 0.0
+    },
+    "verdict": {
+      "zero_data_loss": true,
+      "lost_jobs": 0,
+      "accepted_jobs": 600,
+      "accounted_jobs": 600,
+      "recovery_seconds": 0.0,
+      "availability_during_fault": 1.0,
+      "sustained_rps": 25.0,
+      "p99_submit_ms": 921.74,
+      "notes": "800ms of injected storage latency in the worker path; timeouts and retries absorb it."
+    }
+  },
+  {
+    "id": "run_8413efc71b394fbfbf20",
+    "scenario": "poison-payloads",
+    "metrics": {
+      "requests_sent": 600,
+      "accepted": 514,
+      "rejected": 86,
+      "status_codes": {
+        "422": 86,
+        "202": 514
+      },
+      "achieved_rps": 25.0,
+      "completed_jobs": 514,
+      "succeeded": 513,
+      "failed": 0,
+      "dlq": 1,
+      "retries": 76,
+      "still_pending": 0,
+      "submit_latency_ms": {
+        "p50": 45.44,
+        "p95": 142.56,
+        "p99": 358.29,
+        "max": 802.21
+      },
+      "end_to_end_ms": {
+        "p50": 131.55,
+        "p95": 633.63,
+        "p99": 1241.73
+      },
+      "queue_drain_s": 0.56,
+      "edge_error_rate": 0.1433,
+      "edge_error_rate_during_fault": 0.145
+    },
+    "verdict": {
+      "zero_data_loss": true,
+      "lost_jobs": 0,
+      "accepted_jobs": 514,
+      "accounted_jobs": 514,
+      "recovery_seconds": 0.0,
+      "availability_during_fault": 0.855,
+      "sustained_rps": 25.0,
+      "p99_submit_ms": 358.29,
+      "notes": "30% of model calls fail hard. Retries, then dead-letter, without stalling the queue."
+    }
+  },
+  {
+    "id": "run_3d4521e7fc834c4c876f",
+    "scenario": "burst",
+    "metrics": {
+      "requests_sent": 996,
+      "accepted": 990,
+      "rejected": 6,
+      "status_codes": {
+        "202": 990,
+        "0": 6
+      },
+      "achieved_rps": 41.5,
+      "completed_jobs": 996,
+      "succeeded": 996,
+      "failed": 0,
+      "dlq": 0,
+      "retries": 0,
+      "still_pending": 0,
+      "submit_latency_ms": {
+        "p50": 56.85,
+        "p95": 4023.8,
+        "p99": 7388.83,
+        "max": 10164.74
+      },
+      "end_to_end_ms": {
+        "p50": 11052.83,
+        "p95": 13280.23,
+        "p99": 13435.82
+      },
+      "queue_drain_s": 11.98,
+      "edge_error_rate": 0.006,
+      "edge_error_rate_during_fault": 0.0126
+    },
+    "verdict": {
+      "zero_data_loss": true,
+      "lost_jobs": 0,
+      "accepted_jobs": 990,
+      "accounted_jobs": 996,
+      "recovery_seconds": null,
+      "availability_during_fault": 0.9874,
+      "sustained_rps": 41.5,
+      "p99_submit_ms": 7388.83,
+      "notes": "3x request rate for the fault window with no injected failure - pure elasticity test."
+    }
+  }
+]

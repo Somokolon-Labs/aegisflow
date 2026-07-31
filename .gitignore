@@ -1,0 +1,28 @@
+.env
+.env.local
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+data/
+*.db
+*.db-wal
+*.db-shm
+ml/artifacts/*.joblib
+
+# web
+web/node_modules/
+web/.next/
+web/out/
+web/.vercel/
+web/next-env.d.ts
+npm-debug.log*
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

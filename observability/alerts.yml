@@ -1,0 +1,68 @@
+groups:
+  - name: aegisflow-availability
+    rules:
+      - alert: GatewayDown
+        expr: max_over_time(aegisflow_service_up{service="gateway"}[1m]) < 1
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Gateway is not serving"
+          description: "No gateway replica reported up for a minute. Ingest is offline."
+
+      - alert: NoWorkersOnline
+        expr: count(aegisflow_service_up{service="worker"} == 1) == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "No inference workers online"
+          description: "Jobs are still accepted and durable, but nothing is consuming the queue."
+
+  - name: aegisflow-saturation
+    rules:
+      - alert: QueueBacklogGrowing
+        expr: aegisflow_queue_depth > 500 and deriv(aegisflow_queue_depth[3m]) > 0
+        for: 3m
+        labels: { severity: warning }
+        annotations:
+          summary: "Queue depth climbing"
+          description: "Arrival rate exceeds worker capacity. Scale the worker deployment."
+
+      - alert: OutboxNotDraining
+        expr: aegisflow_outbox_pending > 100
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Outbox is not draining"
+          description: "The relay cannot publish. Check broker connectivity and the publish breaker."
+
+      - alert: LatencyRegression
+        expr: histogram_quantile(0.95, sum(rate(aegisflow_job_end_to_end_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 end-to-end latency above 2s"
+
+  - name: aegisflow-correctness
+    rules:
+      - alert: DeadLetterRate
+        expr: sum(rate(aegisflow_dead_letters_total[10m])) > 0.2
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Jobs are being dead-lettered"
+          description: "More than one dead letter every five seconds. Inspect /v1/dlq."
+
+      - alert: CircuitBreakerOpen
+        expr: max(aegisflow_circuit_breaker_state) >= 2
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "A circuit breaker is open"
+
+      - alert: ChaosFaultLeftBehind
+        expr: sum(aegisflow_chaos_faults_active) > 0
+        for: 15m
+        labels: { severity: info }
+        annotations:
+          summary: "Injected fault active for 15 minutes"
+          description: "Drills are time-boxed; a long-lived fault usually means a forgotten manual injection."

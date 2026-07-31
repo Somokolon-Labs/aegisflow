@@ -1,0 +1,8 @@
+{
+  "version": "embed-v1+tfidf-svd",
+  "dim": 64,
+  "explained_variance": 0.7772,
+  "samples": 2110,
+  "training_seconds": 0.457,
+  "trained_at": "2026-07-31T16:28:07Z"
+}
