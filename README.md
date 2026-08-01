@@ -217,6 +217,7 @@ managed Postgres, or the Kubernetes manifests for the full Kafka topology.
 
 | Target | How |
 | --- | --- |
+| Single process | `EMBEDDED_WORKER=true uvicorn services.gateway.main:app` — worker and relay loops run inside the gateway. Same code and guarantees in one container, for small or memory-capped hosts |
 | Kubernetes | `kubectl apply -k deploy/k8s` — probes, HPA, PDB, topology spread, NetworkPolicy, Ingress with SSE buffering disabled |
 | KEDA / Prometheus operator | `kubectl apply -f deploy/k8s/optional/keda-and-monitoring.yaml` — scale workers on consumer lag |
 | Render | `deploy/render.yaml` — `BROKER=db`, managed Postgres, no Kafka needed |

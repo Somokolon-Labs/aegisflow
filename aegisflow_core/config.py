@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     gateway_url: str = "http://localhost:8000"
 
     # ---- worker ---------------------------------------------------------
+    # Run the worker and relay loops inside the gateway process. Intended for
+    # small or memory-constrained deployments (a 512MB instance cannot hold four
+    # Python processes that each import scikit-learn). Production uses separate
+    # deployments so they scale and fail independently.
+    embedded_worker: bool = False
     worker_concurrency: int = 4
     worker_prefetch: int = 16
     # Writing an explicit "running" transition costs one extra DB round trip per

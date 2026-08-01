@@ -65,6 +65,29 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log_event(log, "error", "broker start failed, relying on outbox", error=str(exc))
     service_up.labels(service="gateway", instance=settings.instance_id).set(1)
+
+    # Optional single-process mode: run the worker and relay loops here instead
+    # of as separate deployments. Same code, same guarantees, one container.
+    embedded: list[asyncio.Task] = []
+    embedded_worker = None
+    embedded_relay = None
+    if settings.embedded_worker:
+        from services.relay.main import Relay
+        from services.worker.main import InferenceWorker
+
+        settings.service_name = "gateway"  # the imports above claim the name
+        embedded_worker = InferenceWorker()
+        await embedded_worker.start()
+        embedded_relay = Relay()
+        await embedded_relay.start()
+        embedded = [
+            asyncio.create_task(embedded_worker.consume_loop(), name="embedded-consume"),
+            asyncio.create_task(embedded_worker.heartbeat_loop(), name="embedded-heartbeat"),
+            asyncio.create_task(embedded_relay.drain_outbox(), name="embedded-outbox"),
+            asyncio.create_task(embedded_relay.reap_loop(), name="embedded-reaper"),
+            asyncio.create_task(embedded_relay.janitor_loop(), name="embedded-janitor"),
+        ]
+
     log_event(
         log,
         "info",
@@ -73,11 +96,20 @@ async def lifespan(app: FastAPI):
         database="sqlite" if settings.is_sqlite else "postgres",
         cache=cache.status()["backend"],
         models=[m["name"] for m in registry.catalog()],
+        embedded_worker=settings.embedded_worker,
     )
     try:
         yield
     finally:
         service_up.labels(service="gateway", instance=settings.instance_id).set(0)
+        if embedded_worker is not None:
+            await embedded_worker.stop()
+        if embedded_relay is not None:
+            await embedded_relay.stop()
+        for task in embedded:
+            task.cancel()
+        if embedded:
+            await asyncio.gather(*embedded, return_exceptions=True)
         await broker.stop()
         await cache.close()
         await dispose()
