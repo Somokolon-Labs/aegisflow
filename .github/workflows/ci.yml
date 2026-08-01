@@ -34,37 +34,67 @@ jobs:
       - name: Train bundled models
         run: python ml/train.py --per-class 400 --seed 17
 
-      - name: Boot the platform (SQLite + DB broker)
+      # Boot, verify and test in ONE step: background processes started in a
+      # previous step do not reliably survive into the next one.
+      - name: Boot the platform, smoke test, contract check
         env:
           APP_ENV: ci
           DATABASE_URL: sqlite+aiosqlite:///./data/ci.db
           BROKER: db
           LOG_JSON: "false"
+          PYTHONUNBUFFERED: "1"
         run: |
-          mkdir -p data
-          uvicorn services.gateway.main:app --host 127.0.0.1 --port 8000 &
-          METRICS_PORT=9101 python -m services.worker.main &
-          METRICS_PORT=9102 python -m services.relay.main &
-          uvicorn services.lab.main:app --host 127.0.0.1 --port 8100 &
-          for i in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:8000/health >/dev/null && break
-            sleep 2
+          set -euo pipefail
+          mkdir -p data logs
+
+          uvicorn services.gateway.main:app --host 127.0.0.1 --port 8000 > logs/gateway.log 2>&1 &
+          WORKER_ID=worker-a METRICS_PORT=9101 python -m services.worker.main > logs/worker-a.log 2>&1 &
+          WORKER_ID=worker-b METRICS_PORT=9103 python -m services.worker.main > logs/worker-b.log 2>&1 &
+          METRICS_PORT=9102 python -m services.relay.main > logs/relay.log 2>&1 &
+          uvicorn services.lab.main:app --host 127.0.0.1 --port 8100 > logs/lab.log 2>&1 &
+
+          echo "waiting for the gateway..."
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+              echo "gateway ready after ${i}s"
+              break
+            fi
+            sleep 1
           done
 
-      - name: Smoke test the full path
-        env:
-          APP_ENV: ci
-          DATABASE_URL: sqlite+aiosqlite:///./data/ci.db
-          BROKER: db
-        run: python scripts/smoke.py
+          if ! curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+            echo "::error::gateway never became healthy - service logs follow"
+            for f in logs/*.log; do echo "----- $f"; tail -40 "$f"; done
+            exit 1
+          fi
 
-      - name: Contract check
-        run: |
-          set -e
+          echo "waiting for a worker heartbeat..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9101/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+
+          echo "== smoke test =="
+          if ! python scripts/smoke.py; then
+            echo "::error::smoke test failed - service logs follow"
+            for f in logs/*.log; do echo "----- $f"; tail -60 "$f"; done
+            exit 1
+          fi
+
+          echo "== contract check =="
           curl -fsS http://127.0.0.1:8000/v1/stats -H 'X-API-Key: demo-key-aegisflow' >/dev/null
           curl -fsS http://127.0.0.1:8000/v1/models >/dev/null
           curl -fsS http://127.0.0.1:8000/v1/lab/scenarios >/dev/null
           curl -fsS http://127.0.0.1:8000/metrics | grep -q aegisflow_jobs_submitted_total
+          echo "all contracts satisfied"
+
+      - name: Upload service logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-logs
+          path: logs/
+          if-no-files-found: ignore
 
   console:
     name: console · typecheck and build
