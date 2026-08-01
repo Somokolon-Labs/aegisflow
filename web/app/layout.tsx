@@ -32,6 +32,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   robots: { index: true, follow: true },
+  icons: { icon: [{ url: "/favicon.svg", type: "image/svg+xml" }] },
 };
 
 export const viewport: Viewport = {

@@ -1,0 +1,4 @@
+# AegisFlow console - public demo
+User-agent: *
+Allow: /
+Crawl-delay: 1
