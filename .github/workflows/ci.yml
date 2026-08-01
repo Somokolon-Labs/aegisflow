@@ -142,15 +142,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # GHCR rejects mixed-case repository names, and org logins are often
+      # mixed case (Somokolon-Labs), so lowercase the owner before tagging.
+      - name: Normalise the registry owner
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
       - name: Backend image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aegisflow-backend:1.0.0
-            ghcr.io/${{ github.repository_owner }}/aegisflow-backend:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/aegisflow-backend:latest
+            ghcr.io/${{ env.OWNER }}/aegisflow-backend:1.0.0
+            ghcr.io/${{ env.OWNER }}/aegisflow-backend:${{ github.sha }}
+            ghcr.io/${{ env.OWNER }}/aegisflow-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -162,7 +167,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_USE_MOCKS=false
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aegisflow-console:1.0.0
-            ghcr.io/${{ github.repository_owner }}/aegisflow-console:latest
+            ghcr.io/${{ env.OWNER }}/aegisflow-console:1.0.0
+            ghcr.io/${{ env.OWNER }}/aegisflow-console:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
