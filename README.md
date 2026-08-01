@@ -7,13 +7,26 @@
 Durable ingest, an elastic worker fleet, and a resilience lab that breaks the platform on
 purpose and reports what happened.
 
-[![ci](https://github.com/shahriarahmedseam/aegisflow/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+**[Live console](https://aegisflow-console.vercel.app)** ·
+**[Live API](https://aegisflow-gateway.onrender.com/docs)** ·
+[Architecture](docs/architecture.md) ·
+[Fault tolerance](docs/fault-tolerance.md) ·
+[Benchmarks](docs/benchmarks.md)
+
+[![ci](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.10%20%7C%203.12-4FD1C5)
 ![next](https://img.shields.io/badge/next.js-16-white)
 ![broker](https://img.shields.io/badge/broker-kafka%20%7C%20redis%20%7C%20db-F0B429)
+![data loss](https://img.shields.io/badge/lost_jobs-0%2F3300-4FD1C5)
 ![license](https://img.shields.io/badge/license-MIT-8A95A1)
 
 </div>
+
+> **Try it in 30 seconds.** Open the [console](https://aegisflow-console.vercel.app), submit a
+> prediction, then hit **Pause the fleet** and watch the queue absorb the outage and drain when the
+> fault clears. The public demo runs a simulator in the browser, so it works even when the API is
+> asleep. The [live API](https://aegisflow-gateway.onrender.com/docs) is a free instance running
+> all four services in one container — expect a ~50s cold start on the first request.
 
 ---
 
@@ -189,6 +202,18 @@ Deployed without a backend it runs against an in-browser simulator
 `NEXT_PUBLIC_USE_MOCKS=false` and `NEXT_PUBLIC_API_URL`.
 
 ## Deployment
+
+Currently live:
+
+| Component | URL | Notes |
+| --- | --- | --- |
+| Console | <https://aegisflow-console.vercel.app> | Vercel, standalone demo mode |
+| Gateway + worker + relay + lab | <https://aegisflow-gateway.onrender.com> | Render free tier, `BROKER=db`, SQLite, all four processes in one container |
+| Images | `ghcr.io/shahriar-ahmed-seam/aegisflow-backend`, `…-console` | published by CI on every push to `main` |
+
+The free instance sleeps when idle and stores state on ephemeral disk, so a cold start takes about
+50 seconds and data resets on restart. For a durable deployment use the blueprint below with a
+managed Postgres, or the Kubernetes manifests for the full Kafka topology.
 
 | Target | How |
 | --- | --- |
