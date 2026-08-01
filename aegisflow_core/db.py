@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import event, text
+from sqlalchemy import event, inspect, text
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from .config import settings
@@ -80,10 +82,50 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
             raise
 
 
-async def init_db() -> None:
-    engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+async def missing_tables() -> list[str]:
+    """Which expected tables do not exist yet. A read, so it takes no write lock."""
+
+    def _inspect(sync_conn) -> list[str]:
+        present = set(inspect(sync_conn).get_table_names())
+        return sorted(set(Base.metadata.tables) - present)
+
+    async with get_engine().connect() as conn:
+        return await conn.run_sync(_inspect)
+
+
+async def init_db(retries: int = 10, base_delay_s: float = 0.4) -> None:
+    """Create the schema safely when several processes boot at once.
+
+    ``create_all`` checks for tables and then creates them, which is a
+    time-of-check/time-of-use race: gateway, workers, relay and lab start
+    together, several pass the check, and one loses the CREATE. Kubernetes
+    replicas against an empty database hit the same thing.
+
+    Checking first means only the first process takes a write lock; the others
+    read, see a complete schema and move on. If they catch the winner
+    mid-creation they wait and re-check rather than fighting for the lock.
+    """
+    for attempt in range(1, retries + 1):
+        try:
+            missing = await missing_tables()
+        except Exception:
+            missing = sorted(Base.metadata.tables)
+
+        if not missing:
+            return
+
+        try:
+            async with get_engine().begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            if not await missing_tables():
+                return
+        except (OperationalError, ProgrammingError, IntegrityError):
+            # Another process is creating the schema right now; wait it out.
+            pass
+
+        if attempt == retries:
+            raise RuntimeError(f"schema still incomplete after {retries} attempts: {missing}")
+        await asyncio.sleep(min(2.0, base_delay_s * attempt))
 
 
 async def ping() -> bool:
